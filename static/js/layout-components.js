@@ -164,6 +164,27 @@ function EditorComponent(container, state) {
   });
 }
 
+function waitForInput() {
+  return new Promise(resolve => {
+    let value = '';
+    const disposable = term.onKey(e => {
+      console.log('key:', e.key)
+      // Only append allowed characters.
+      if (/^[a-zA-Z0-9\s]+$/g.test(e.key)) {
+        term.write(e.key);
+        value += e.key;
+      }
+
+      // If the user presses enter, resolve the promise.
+      if (e.key === '\r') {
+        disposable.dispose();
+        term.write('\n');
+        resolve(value);
+      }
+    });
+  });
+}
+
 let term;
 const fitAddon = new FitAddon.FitAddon();
 function TerminalComponent(container, state) {
@@ -184,11 +205,12 @@ function TerminalComponent(container, state) {
     term = new Terminal({
       convertEol: true,
       disableStdin: true,
+      cursorBlink: true,
       fontSize,
       lineHeight: 1.2
     })
     term.loadAddon(fitAddon);
-    term.open(document.querySelector('.terminal-component-container .lm_content'));
+    term.open(container.getElement()[0]);
     fitAddon.fit();
 
     startingMessage = [
@@ -199,7 +221,6 @@ function TerminalComponent(container, state) {
       term.write(line + '\n');
     }
     term.write('\n');
-    term.open(container.getElement()[0]);
     setFontSize(fontSize);
   });
 

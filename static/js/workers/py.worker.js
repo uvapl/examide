@@ -8,6 +8,8 @@ class API extends BaseAPI {
   constructor(options) {
     super(options);
     this.runButtonCommandCallback = options.runButtonCommandCallback;
+    this.hostRead = options.hostRead;
+    this.sharedMem = options.sharedMem;
 
     this.initPyodide();
   }
@@ -18,6 +20,41 @@ class API extends BaseAPI {
   initPyodide() {
     loadPyodide({ indexURL: '../../wasm/py/' }).then(async (pyodide) => {
       this.pyodide = pyodide;
+
+      console.log('Atomics:')
+      console.log(Atomics.wait)
+
+
+      pyodide.setStdin({
+        stdin: () => {
+          this.hostRead();
+
+          console.log('before atomics.wait');
+          Atomics.wait(new Int32Array(this.sharedMem.buffer), 0, 0);
+
+          console.log('after atomics.wait');
+
+          // Read the value stored in memory.
+          const sharedMem = new Uint8Array(this.sharedMem.buffer);
+          console.log('initialised sharedMem')
+          let str = '';
+          for (let i = 0; ; i++) {
+            if (sharedMem[i] === 0) {
+              // Null terminator found, terminate the loop.
+              break;
+            }
+
+            str += String.fromCharCode(sharedMem[i]);
+          }
+
+          console.log('user input received:', str);
+
+          // Clean shared memory.
+          sharedMem.fill(0);
+
+          return str;
+        }
+      });
 
       // Import some basic modules.
       this.pyodide.runPython('import io, sys');
@@ -163,11 +200,17 @@ let port;
 const onAnyMessage = async event => {
   switch (event.data.id) {
     case 'constructor':
-      port = event.data.data;
+      port = event.data.data.remotePort;
       port.onmessage = onAnyMessage;
       api = new API({
+        sharedMem: event.data.data.sharedMem,
+
         hostWrite(s) {
           port.postMessage({ id: 'write', data: s });
+        },
+
+        hostRead() {
+          port.postMessage({ id: 'readStdin' });
         },
 
         readyCallback() {
@@ -180,7 +223,7 @@ const onAnyMessage = async event => {
 
         runButtonCommandCallback(selector) {
           port.postMessage({ id: 'runButtonCommandCallback', selector });
-        }
+        },
       });
       break;
 

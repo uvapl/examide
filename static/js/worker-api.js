@@ -4,14 +4,21 @@
 class WorkerAPI {
   constructor(proglang) {
     this.worker = new Worker(this.getWorkerPath(proglang));
+
     const channel = new MessageChannel();
     this.port = channel.port1;
     this.port.onmessage = this.onmessage.bind(this);
 
+    this.sharedMem = new WebAssembly.Memory({
+      initial: 1,
+      maximum: 80,
+      shared: true,
+    });
+
     const remotePort = channel.port2;
     this.worker.postMessage({
       id: 'constructor',
-      data: remotePort
+      data: { remotePort, sharedMem: this.sharedMem },
     }, [remotePort]);
   }
 
@@ -75,6 +82,20 @@ class WorkerAPI {
 
       case 'write':
         term.write(event.data.data);
+        break;
+
+      case 'readStdin':
+        waitForInput().then((value) => {
+          const view = new Uint8Array(this.sharedMem.buffer);
+          for (let i = 0; i < value.length; i++) {
+            // to the shared memory
+            view[i] = value.charCodeAt(i);
+          }
+          // the last byte is the null terminator
+          view[value.length] = 0;
+
+          Atomics.notify(new Int32Array(this.sharedMem.buffer), 0);
+        });
         break;
 
       case 'runButtonCommandCallback':
