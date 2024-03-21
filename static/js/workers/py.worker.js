@@ -108,7 +108,10 @@ class API extends BaseAPI {
       const activeTab = files.find(file => file.filename === activeTabName);
 
       this.hostWriteCmd(`python3 ${activeTab.filename}`);
-      this.hostWrite(this.run(activeTab.contents));
+      const stdout = this.run(activeTab.contents);
+      if (stdout) {
+        this.hostWrite(stdout);
+      }
     } finally {
       if (typeof this.runUserCodeCallback === 'function') {
         this.runUserCodeCallback();
@@ -162,9 +165,12 @@ class API extends BaseAPI {
     // Clear the standard output.
     this.pyodide.runPython('sys.stdout = io.StringIO()')
 
+    // Gather the current globals (i.e. vars, funcs, classes).
+    const globals = this.pyodide.globals.get('dict')();
+
     try {
       // Run the code and get the standard output.
-      let cmdOutput = this.pyodide.runPython(code.join('\n'))
+      let cmdOutput = this.pyodide.runPython(code.join('\n'), { globals, locals: globals });
       const stdout = this.pyodide.runPython('sys.stdout.getvalue()')
 
       // In most cases, the commands will write to the stdout, but some packages,
@@ -186,6 +192,10 @@ class API extends BaseAPI {
       return cmdOutput;
     } catch (err) {
       return err.message;
+    } finally {
+      // Clear the globals after the code has run such that the next execution
+      // will be called with a clean state.
+      globals.destroy();
     }
   }
 }
