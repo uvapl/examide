@@ -21,22 +21,14 @@ class API extends BaseAPI {
     loadPyodide({ indexURL: '../../wasm/py/' }).then(async (pyodide) => {
       this.pyodide = pyodide;
 
-      console.log('Atomics:')
-      console.log(Atomics.wait)
-
-
       pyodide.setStdin({
         stdin: () => {
           this.hostRead();
 
-          console.log('before atomics.wait');
           Atomics.wait(new Int32Array(this.sharedMem.buffer), 0, 0);
-
-          console.log('after atomics.wait');
 
           // Read the value stored in memory.
           const sharedMem = new Uint8Array(this.sharedMem.buffer);
-          console.log('initialised sharedMem')
           let str = '';
           for (let i = 0; ; i++) {
             if (sharedMem[i] === 0) {
@@ -122,7 +114,7 @@ class API extends BaseAPI {
   /**
    * Run a given command with the given files.
    *
-  * @param {object} data - The data object coming from the worker.
+   * @param {object} data - The data object coming from the worker.
    * @param {string} data.selector - Contains the button selector, which is
    * solely needed for the callback to enable the button after the code ran.
    * @param {string} activeTabName - The name of the active editor tab.
