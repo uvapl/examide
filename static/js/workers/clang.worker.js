@@ -95,6 +95,8 @@ class MemFS {
   constructor(options) {
     const compileStreaming = options.compileStreaming;
     this.hostWrite = options.hostWrite;
+    this.hostRead = options.hostRead;
+    this.sharedMem = options.sharedMem;
     this.stdinStr = options.stdinStr || "";
     this.stdinStrPos = 0;
     this.memfsFilename = options.memfsFilename;
@@ -171,6 +173,27 @@ class MemFS {
   }
 
   host_read(fd, iovs, iovs_len, nread) {
+    let str = '';
+
+    this.hostRead();
+    Atomics.wait(new Int32Array(this.sharedMem.buffer), 0, 0);
+
+    // Read the value stored in memory.
+    const sharedMem = new Uint8Array(this.sharedMem.buffer);
+    for (let i = 0; ; i++) {
+      if (sharedMem[i] === 0) {
+        // Null terminator found, terminate the loop.
+        break;
+      }
+
+      str += String.fromCharCode(sharedMem[i]);
+    }
+
+    this.setStdinStr(str);
+
+    // Clean shared memory.
+    sharedMem.fill(0);
+
     this.hostMem_.check();
     assert(fd === 0);
     let size = 0;
@@ -190,8 +213,6 @@ class MemFS {
         break;
       }
     }
-    // For logging
-    // this.hostWrite("Read "+ size + "bytes, pos: "+ this.stdinStrPos + "\n");
     this.hostMem_.write32(nread, size);
     return ESUCCESS;
   }
@@ -429,6 +450,8 @@ class API extends BaseAPI {
     super(options);
     this.moduleCache = {};
     this.readBuffer = options.readBuffer;
+    this.sharedMem = options.sharedMem;
+    this.hostRead = options.hostRead;
     this.compileStreaming = options.compileStreaming;
     this.clangFilename = options.clang || 'clang';
     this.lldFilename = options.lld || 'lld';
@@ -437,6 +460,8 @@ class API extends BaseAPI {
     this.memfs = new MemFS({
       compileStreaming: this.compileStreaming,
       hostWrite: this.hostWrite,
+      hostRead: this.hostRead,
+      sharedMem: this.sharedMem,
       memfsFilename: options.memfs || 'memfs',
     });
     this.ready = this.memfs.ready.then(() => {
@@ -518,8 +543,25 @@ class API extends BaseAPI {
     return stillRunning ? app : null;
   }
 
+  /**
+   * Preprocess the contents of the user.
+   *
+   * @param {string} contents - The contents of the user's code.
+   * @returns {string} Preprocessed contents.
+   */
+  preprocessContents(contents) {
+    let new_contents = contents;
+
+    // Prepend `fflush(stdout);` before `scanf` to make sure anything printed
+    // before the scanf is already printed to the screen.
+    new_contents = new_contents.replace(/scanf\(/g, 'fflush(stdout); scanf(');
+
+    return new_contents;
+  }
+
   async runUserCode({ activeTabName, files }) {
-    const { filename, contents } = files.find(file => file.filename === activeTabName);
+    const { filename, contents: rawContents } = files.find(file => file.filename === activeTabName);
+    const contents = this.preprocessContents(rawContents);
     const basename = filename.replace(/\.c$/, '');
     const input = `${basename}.cc`;
     const obj = `${basename}.o`;
@@ -560,9 +602,10 @@ let currentApp = null;
 const onAnyMessage = async event => {
   switch (event.data.id) {
     case 'constructor':
-      port = event.data.data;
+      port = event.data.data.remotePort;
       port.onmessage = onAnyMessage;
       api = new API({
+        sharedMem: event.data.data.sharedMem,
         async readBuffer(filename) {
           const response = await fetch(filename);
           return response.arrayBuffer();
@@ -575,6 +618,10 @@ const onAnyMessage = async event => {
 
         hostWrite(s) {
           port.postMessage({ id: 'write', data: s });
+        },
+
+        hostRead() {
+          port.postMessage({ id: 'readStdin' });
         },
 
         readyCallback() {

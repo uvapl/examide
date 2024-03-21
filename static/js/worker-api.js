@@ -88,10 +88,10 @@ class WorkerAPI {
         waitForInput().then((value) => {
           const view = new Uint8Array(this.sharedMem.buffer);
           for (let i = 0; i < value.length; i++) {
-            // to the shared memory
+            // To the shared memory.
             view[i] = value.charCodeAt(i);
           }
-          // the last byte is the null terminator
+          // Set the last byte to the null terminator.
           view[value.length] = 0;
 
           Atomics.notify(new Int32Array(this.sharedMem.buffer), 0);

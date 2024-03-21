@@ -59,6 +59,55 @@ function runButtonCommand(selector, cmd) {
   window._workerApi.runButtonCommand(selector, activeTabName, cmd, files);
 }
 
+/**
+ * Enable stdin in the terminal and record the user's keystrokes. Once the user
+ * presses ENTER, the promise is resolved with the user's input.
+ *
+ * @returns {Promise<string>} The user's input.
+ */
+function waitForInput() {
+  return new Promise(resolve => {
+    // Immediately focus the terminal when user input is requested.
+    term.focus();
+
+    // Disable some special characters.
+    // For all input sequences, see http://xtermjs.org/docs/api/vtfeatures/#c0
+    const blacklistedKeys = [
+      '\u007f', // Backspace
+      '\t',     // Tab
+    ]
+
+    // Keep track of the value that is typed by the user.
+    let value = '';
+    const disposable = term.onKey(e => {
+      // Only append allowed characters.
+      if (!blacklistedKeys.includes(e.key)) {
+        term.write(e.key);
+        value += e.key;
+      }
+
+      // Remove the last character when pressing backspace. This is done by
+      // triggering a backspace '\b' character and then insert a space at that
+      // position to clear the character.
+      if (e.key === '\u007f' && value.length > 0) {
+        term.write('\b \b');
+        value = value.slice(0, -1);
+      }
+
+      // If the user presses enter, resolve the promise.
+      if (e.key === '\r') {
+        // Remove the event listener.
+        disposable.dispose();
+
+        // Trigger a real enter in the terminal.
+        term.write('\n');
+
+        resolve(value);
+      }
+    });
+  });
+}
+
 function EditorComponent(container, state) {
   // To make sure GoldenLayout doensn't override the editor styles, we create
   // another child container for the editor instance.
@@ -161,27 +210,6 @@ function EditorComponent(container, state) {
       this.editor.destroy();
       this.editor = null;
     }
-  });
-}
-
-function waitForInput() {
-  return new Promise(resolve => {
-    let value = '';
-    const disposable = term.onKey(e => {
-      console.log('key:', e.key)
-      // Only append allowed characters.
-      if (/^[a-zA-Z0-9\s]+$/g.test(e.key)) {
-        term.write(e.key);
-        value += e.key;
-      }
-
-      // If the user presses enter, resolve the promise.
-      if (e.key === '\r') {
-        disposable.dispose();
-        term.write('\n');
-        resolve(value);
-      }
-    });
   });
 }
 
