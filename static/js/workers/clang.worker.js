@@ -1,11 +1,11 @@
 self.importScripts('base-api.js')
 
-function readStr(u8, o, len = -1) {
+function readStr(u8, offset, len = -1) {
   let str = '';
   let end = u8.length;
   if (len != -1)
-    end = o + len;
-  for (let i = o; i < end && u8[i] != 0; ++i)
+    end = offset + len;
+  for (let i = offset; i < end && u8[i] != 0; ++i)
     str += String.fromCharCode(u8[i]);
   return str;
 }
@@ -61,30 +61,30 @@ class Memory {
     }
   }
 
-  read8(o) { return this.u8[o]; }
-  read32(o) { return this.u32[o >> 2]; }
-  write8(o, v) { this.u8[o] = v; }
-  write32(o, v) { this.u32[o >> 2] = v; }
-  write64(o, vlo, vhi = 0) { this.write32(o, vlo); this.write32(o + 4, vhi); }
+  read8(offset) { return this.u8[offset]; }
+  read32(offset) { return this.u32[offset >> 2]; }
+  write8(offset, value) { this.u8[offset] = value; }
+  write32(offset, value) { this.u32[offset >> 2] = value; }
+  write64(offset, vlo, vhi = 0) { this.write32(offset, vlo); this.write32(offset + 4, vhi); }
 
-  readStr(o, len) {
-    return readStr(this.u8, o, len);
+  readStr(offset, len) {
+    return readStr(this.u8, offset, len);
   }
 
   // Null-terminated string.
-  writeStr(o, str) {
-    o += this.write(o, str);
-    this.write8(o, 0);
+  writeStr(offset, str) {
+    offset += this.write(offset, str);
+    this.write8(offset, 0);
     return str.length + 1;
   }
 
-  write(o, buf) {
+  write(offset, buf) {
     if (buf instanceof ArrayBuffer) {
-      return this.write(o, new Uint8Array(buf));
+      return this.write(offset, new Uint8Array(buf));
     } else if (typeof buf === 'string') {
-      return this.write(o, buf.split('').map(x => x.charCodeAt(0)));
+      return this.write(offset, buf.split('').map(x => x.charCodeAt(0)));
     } else {
-      const dst = new Uint8Array(this.buffer, o, buf.length);
+      const dst = new Uint8Array(this.buffer, offset, buf.length);
       dst.set(buf);
       return buf.length;
     }
@@ -180,7 +180,7 @@ class MemFS {
 
     // Read the value stored in memory.
     const sharedMem = new Uint8Array(this.sharedMem.buffer);
-    for (let i = 0; ; i++) {
+    for (let i = 0; i < sharedMem.length; i++) {
       if (sharedMem[i] === 0) {
         // Null terminator found, terminate the loop.
         break;
